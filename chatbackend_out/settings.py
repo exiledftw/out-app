@@ -101,8 +101,11 @@ FRONTEND_ORIGINS = os.environ.get('FRONTEND_ORIGINS', 'http://localhost:3000,htt
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGINS.split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
-# CSRF Trusted Origins
-CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000,http://localhost:5173').split(',')
+# CSRF Trusted Origins - include Railway domain for admin access
+CSRF_TRUSTED_ORIGINS = [
+    'https://out-app-production.up.railway.app',
+    'https://*.railway.app',
+] + [origin.strip() for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000,http://localhost:5173').split(',') if origin.strip()]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
