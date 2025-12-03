@@ -21,4 +21,5 @@ EXPOSE 8000
 
 CMD python manage.py migrate --noinput && \
     python manage.py collectstatic --noinput --clear && \
+    python manage.py create_admin && \
     daphne -b 0.0.0.0 -p $PORT chatbackend_out.asgi:application
