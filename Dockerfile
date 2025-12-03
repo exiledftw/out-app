@@ -2,7 +2,6 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PORT=10000
 
 WORKDIR /app
 
@@ -18,8 +17,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY . .
 
-EXPOSE ${PORT}
+EXPOSE 8000
 
 CMD python manage.py migrate --noinput && \
     python manage.py collectstatic --noinput --clear && \
-    daphne -b 0.0.0.0 -p ${PORT} chatbackend_out.asgi:application
+    daphne -b 0.0.0.0 -p $PORT chatbackend_out.asgi:application
