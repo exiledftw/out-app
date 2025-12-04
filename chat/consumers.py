@@ -34,6 +34,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             data = json.loads(text_data)
         except Exception:
             return
+        
+        # Handle ping/pong for keepalive
+        if data.get('type') == 'ping':
+            await self.send(text_data=json.dumps({'type': 'pong'}))
+            return
+            
         user = data.get('user') or data.get('user_name') or 'anonymous'
         user_id = data.get('user_id') or data.get('userId')
         content = data.get('content') or data.get('text') or ''

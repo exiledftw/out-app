@@ -11,6 +11,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User as DjangoUser
 import random
 import string
+import logging
+
+logger = logging.getLogger('chat')
 
 # Maximum number of rooms a user can create
 MAX_ROOMS_PER_USER = 3
@@ -112,15 +115,23 @@ class MessageListCreateView(generics.ListCreateAPIView):
         message = Message.objects.create(room=room, user_name=user_name, user=user, content=content)
         serializer = self.get_serializer(message)
 
-        # Broadcast
+        # Broadcast via WebSocket
         try:
             channel_layer = get_channel_layer()
+            broadcast_data = {
+                'id': message.id,
+                'user_name': message.user_name,
+                'user_id': message.user.id if message.user else None,
+                'content': message.content,
+                'created_at': message.created_at.isoformat(),
+            }
             async_to_sync(channel_layer.group_send)(
                 f'room_{room_id}',
-                {'type': 'chat.message', 'message': serializer.data},
+                {'type': 'chat.message', 'message': broadcast_data},
             )
-        except Exception:
-            pass
+            logger.info(f"Broadcast message {message.id} to room_{room_id}")
+        except Exception as e:
+            logger.error(f"Broadcast failed for message {message.id}: {e}")
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
