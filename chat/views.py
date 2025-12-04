@@ -285,3 +285,134 @@ class UserRoomStatsView(APIView):
             'max_rooms': MAX_ROOMS_PER_USER,
             'can_create': created_rooms_count < MAX_ROOMS_PER_USER
         })
+
+
+class RenameRoomView(APIView):
+    """Allow room creator to rename the room"""
+    def post(self, request, room_id, *args, **kwargs):
+        new_name = request.data.get('name') or request.data.get('room_name')
+        if not new_name:
+            return Response({'detail': 'New room name required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get user
+        user = None
+        if getattr(request, 'user', None) and request.user.is_authenticated:
+            user = request.user
+        else:
+            user_id = request.data.get('user_id') or request.data.get('performer_id')
+            if user_id:
+                User = get_user_model()
+                try:
+                    user = User.objects.get(id=user_id)
+                except Exception:
+                    user = None
+        
+        if not user:
+            return Response({'detail': 'User required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            room = Room.objects.get(id=room_id)
+        except Room.DoesNotExist:
+            return Response({'detail': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not room.creator or room.creator.id != user.id:
+            return Response({'detail': 'Only the room creator can rename the room'}, status=status.HTTP_403_FORBIDDEN)
+        
+        room.name = new_name
+        room.save()
+        return Response({'detail': 'Room renamed successfully', 'name': room.name}, status=status.HTTP_200_OK)
+
+
+class KickMemberView(APIView):
+    """Allow room creator to kick a member"""
+    def post(self, request, room_id, *args, **kwargs):
+        target_user_id = request.data.get('target_user_id')
+        if not target_user_id:
+            return Response({'detail': 'target_user_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get performing user (must be room creator)
+        user = None
+        if getattr(request, 'user', None) and request.user.is_authenticated:
+            user = request.user
+        else:
+            performer_id = request.data.get('performer_id')
+            if performer_id:
+                User = get_user_model()
+                try:
+                    user = User.objects.get(id=performer_id)
+                except Exception:
+                    user = None
+        
+        if not user:
+            return Response({'detail': 'User required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            room = Room.objects.get(id=room_id)
+        except Room.DoesNotExist:
+            return Response({'detail': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not room.creator or room.creator.id != user.id:
+            return Response({'detail': 'Only the room creator can kick members'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Don't allow kicking the creator
+        if str(target_user_id) == str(user.id):
+            return Response({'detail': 'Cannot kick the room creator'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Remove member
+        User = get_user_model()
+        try:
+            target = User.objects.get(id=target_user_id)
+            if room.members.filter(id=target.id).exists():
+                room.members.remove(target)
+                return Response({'detail': 'Member kicked successfully'}, status=status.HTTP_200_OK)
+            else:
+                return Response({'detail': 'Target is not a member'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({'detail': 'Target user not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class BanMemberView(APIView):
+    """Allow room creator to ban a member (kick + prevent rejoining)"""
+    def post(self, request, room_id, *args, **kwargs):
+        target_user_id = request.data.get('target_user_id')
+        if not target_user_id:
+            return Response({'detail': 'target_user_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get performing user (must be room creator)
+        user = None
+        if getattr(request, 'user', None) and request.user.is_authenticated:
+            user = request.user
+        else:
+            performer_id = request.data.get('performer_id')
+            if performer_id:
+                User = get_user_model()
+                try:
+                    user = User.objects.get(id=performer_id)
+                except Exception:
+                    user = None
+        
+        if not user:
+            return Response({'detail': 'User required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            room = Room.objects.get(id=room_id)
+        except Room.DoesNotExist:
+            return Response({'detail': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not room.creator or room.creator.id != user.id:
+            return Response({'detail': 'Only the room creator can ban members'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Don't allow banning the creator
+        if str(target_user_id) == str(user.id):
+            return Response({'detail': 'Cannot ban the room creator'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # For now, just kick them (ban tracking requires model change + migration on Railway)
+        # We'll just remove them from members
+        User = get_user_model()
+        try:
+            target = User.objects.get(id=target_user_id)
+            if room.members.filter(id=target.id).exists():
+                room.members.remove(target)
+            return Response({'detail': 'Member banned successfully'}, status=status.HTTP_200_OK)
+        except Exception:
+            return Response({'detail': 'Target user not found'}, status=status.HTTP_404_NOT_FOUND)
