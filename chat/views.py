@@ -12,6 +12,9 @@ from django.contrib.auth.models import User as DjangoUser
 import random
 import string
 
+# Maximum number of rooms a user can create
+MAX_ROOMS_PER_USER = 3
+
 
 class RoomListCreateView(generics.ListCreateAPIView):
     queryset = Room.objects.all().order_by('-created_at')
@@ -28,6 +31,25 @@ class RoomListCreateView(generics.ListCreateAPIView):
             # Return rooms where user is creator or a member
             return Room.objects.filter(dj_models.Q(creator_id=user_id) | dj_models.Q(members__id=user_id)).distinct().order_by('-created_at')
         return super().get_queryset()
+
+    def create(self, request, *args, **kwargs):
+        # Check room creation limit before creating
+        creator_id = None
+        if getattr(request, 'user', None) and request.user.is_authenticated:
+            creator_id = request.user.id
+        else:
+            creator_id = request.data.get('creator_id')
+        
+        if creator_id:
+            # Count rooms created by this user
+            created_rooms_count = Room.objects.filter(creator_id=creator_id).count()
+            if created_rooms_count >= MAX_ROOMS_PER_USER:
+                return Response(
+                    {'detail': f'You can only create up to {MAX_ROOMS_PER_USER} rooms. Delete an existing room to create a new one.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         # Prefer authenticated request user as creator when available
@@ -157,3 +179,98 @@ class LoginView(APIView):
         if user is None:
             return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         return Response({'id': user.id, 'username': user.username, 'first_name': user.first_name, 'last_name': user.last_name})
+
+
+class LeaveRoomView(APIView):
+    """Allow a user to leave a room they are a member of (but not the creator)"""
+    def post(self, request, room_id, *args, **kwargs):
+        # Get user
+        user = None
+        user_id = None
+        if getattr(request, 'user', None) and request.user.is_authenticated:
+            user = request.user
+            user_id = user.id
+        else:
+            user_id = request.data.get('user_id')
+            if user_id:
+                User = get_user_model()
+                try:
+                    user = User.objects.get(id=user_id)
+                except Exception:
+                    return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not user:
+            return Response({'detail': 'User ID required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get room
+        try:
+            room = Room.objects.get(id=room_id)
+        except Room.DoesNotExist:
+            return Response({'detail': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if user is the creator - creators cannot leave, only delete
+        if room.creator and room.creator.id == user.id:
+            return Response({'detail': 'Room creators cannot leave. Delete the room instead.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Check if user is a member
+        if not room.members.filter(id=user.id).exists():
+            return Response({'detail': 'You are not a member of this room'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Remove user from members
+        room.members.remove(user)
+        
+        return Response({'detail': 'Successfully left the room'}, status=status.HTTP_200_OK)
+
+
+class DeleteRoomView(APIView):
+    """Allow a room creator to delete their room"""
+    def delete(self, request, room_id, *args, **kwargs):
+        # Get user
+        user = None
+        user_id = None
+        if getattr(request, 'user', None) and request.user.is_authenticated:
+            user = request.user
+            user_id = user.id
+        else:
+            user_id = request.query_params.get('user_id') or request.data.get('user_id')
+            if user_id:
+                User = get_user_model()
+                try:
+                    user = User.objects.get(id=user_id)
+                except Exception:
+                    return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not user:
+            return Response({'detail': 'User ID required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get room
+        try:
+            room = Room.objects.get(id=room_id)
+        except Room.DoesNotExist:
+            return Response({'detail': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if user is the creator
+        if not room.creator or room.creator.id != user.id:
+            return Response({'detail': 'Only the room creator can delete this room'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Delete the room (this will cascade delete messages too)
+        room_name = room.name
+        room.delete()
+        
+        return Response({'detail': f'Room "{room_name}" deleted successfully'}, status=status.HTTP_200_OK)
+
+
+class UserRoomStatsView(APIView):
+    """Get user's room creation stats"""
+    def get(self, request, *args, **kwargs):
+        user_id = request.query_params.get('user_id')
+        if not user_id:
+            return Response({'detail': 'user_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        created_rooms_count = Room.objects.filter(creator_id=user_id).count()
+        
+        return Response({
+            'created_rooms_count': created_rooms_count,
+            'max_rooms': MAX_ROOMS_PER_USER,
+            'can_create': created_rooms_count < MAX_ROOMS_PER_USER
+        })
