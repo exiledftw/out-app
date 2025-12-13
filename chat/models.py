@@ -45,3 +45,21 @@ class Feedback(models.Model):
         return f"Feedback from {self.user.username}: {self.content[:50]}"
 
 
+class LoginLog(models.Model):
+    """Logs each user login with device/network info"""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='login_logs')
+    ip_address = models.GenericIPAddressField(null=True, blank=True, db_column='IPaddr')
+    user_agent = models.TextField(blank=True)
+    device_id = models.CharField(max_length=255, blank=True, db_column='MAC')  # Device fingerprint
+    logged_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-logged_at']
+        verbose_name = 'Login Log'
+        verbose_name_plural = 'Login Logs'
+
+    def __str__(self):
+        return f"{self.user.username} logged in at {self.logged_at} from {self.ip_address}"
+
+
+

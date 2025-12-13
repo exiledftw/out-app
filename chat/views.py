@@ -211,13 +211,41 @@ class LoginView(APIView):
     def post(self, request, *args, **kwargs):
         username = request.data.get('username') or request.data.get('user_name')
         password = request.data.get('password')
+        device_id = request.data.get('device_id') or request.data.get('deviceId') or ''
+        
         if not username or not password:
             return Response({'detail': 'username and password required'}, status=status.HTTP_400_BAD_REQUEST)
         from django.contrib.auth import authenticate
         user = authenticate(request, username=username, password=password)
         if user is None:
             return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Log the login activity
+        try:
+            # Get IP address from request
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                ip_address = x_forwarded_for.split(',')[0].strip()
+            else:
+                ip_address = request.META.get('REMOTE_ADDR')
+            
+            # Get user agent
+            user_agent = request.META.get('HTTP_USER_AGENT', '')
+            
+            # Create login log entry
+            from .models import LoginLog
+            LoginLog.objects.create(
+                user=user,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                device_id=device_id
+            )
+            logger.info(f"Login logged for {user.username} from IP: {ip_address}, Device: {device_id[:20]}...")
+        except Exception as e:
+            logger.error(f"Failed to log login for {user.username}: {e}")
+        
         return Response({'id': user.id, 'username': user.username, 'first_name': user.first_name, 'last_name': user.last_name})
+
 
 
 class FeedbackCreateView(APIView):
