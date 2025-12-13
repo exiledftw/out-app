@@ -239,10 +239,75 @@ class FeedbackCreateView(APIView):
         except User.DoesNotExist:
             return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # Create feedback
-        feedback = Feedback.objects.create(user=user, content=content)
+        # Create feedback with user's current name and email
+        user_name = f"{user.first_name} {user.last_name}".strip() or user.username
+        user_email = user.email or ''
+        feedback = Feedback.objects.create(
+            user=user, 
+            content=content,
+            user_name=user_name,
+            user_email=user_email
+        )
         serializer = FeedbackSerializer(feedback)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class UpdateProfileView(APIView):
+    """Allow users to update their profile (name, email, password)"""
+    def put(self, request, *args, **kwargs):
+        user_id = request.data.get('user_id')
+        
+        if not user_id:
+            return Response({'detail': 'User ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        User = get_user_model()
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get update fields
+        first_name = request.data.get('first_name')
+        last_name = request.data.get('last_name')
+        email = request.data.get('email')
+        new_password = request.data.get('new_password')
+        current_password = request.data.get('current_password')
+        
+        # Validate current password if changing password
+        if new_password:
+            if not current_password:
+                return Response({'detail': 'Current password is required to change password'}, status=status.HTTP_400_BAD_REQUEST)
+            if not user.check_password(current_password):
+                return Response({'detail': 'Current password is incorrect'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Validate email format if provided
+        if email:
+            if not validate_email(email):
+                return Response({'detail': 'Invalid email format'}, status=status.HTTP_400_BAD_REQUEST)
+            # Check if email is already in use by another user
+            if User.objects.filter(email=email).exclude(id=user.id).exists():
+                return Response({'detail': 'Email already in use'}, status=status.HTTP_409_CONFLICT)
+        
+        # Update fields
+        if first_name is not None:
+            user.first_name = first_name
+        if last_name is not None:
+            user.last_name = last_name
+        if email:
+            user.email = email
+        if new_password:
+            user.set_password(new_password)
+        
+        user.save()
+        
+        return Response({
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'message': 'Profile updated successfully'
+        })
 
 
 class LeaveRoomView(APIView):

@@ -14,7 +14,7 @@ class MessageAdmin(admin.ModelAdmin):
 
 @admin.register(Feedback)
 class FeedbackAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'content', 'created_at')
+    list_display = ('id', 'user', 'user_name', 'user_email', 'content', 'created_at')
     list_filter = ('created_at',)
-    search_fields = ('user__username', 'content')
+    search_fields = ('user__username', 'user_name', 'user_email', 'content')
 

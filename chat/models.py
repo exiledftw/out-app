@@ -33,6 +33,8 @@ class Message(models.Model):
 
 class Feedback(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='feedbacks')
+    user_name = models.CharField(max_length=150, blank=True)  # Name at time of feedback
+    user_email = models.EmailField(blank=True)  # Email at time of feedback
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -41,4 +43,5 @@ class Feedback(models.Model):
 
     def __str__(self):
         return f"Feedback from {self.user.username}: {self.content[:50]}"
+
 
