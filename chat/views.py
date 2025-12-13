@@ -1,8 +1,8 @@
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Room, Message
-from .serializers import RoomSerializer, MessageSerializer
+from .models import Room, Message, Feedback
+from .serializers import RoomSerializer, MessageSerializer, FeedbackSerializer
 from rest_framework.views import APIView
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -161,22 +161,50 @@ class JoinRoomView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+import re
+
+def validate_email(email):
+    """Validate email format - must contain @ and end with valid domain"""
+    if not email:
+        return False
+    # Basic email regex: something@something.domain
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(com|net|org|edu|gov|io|co|info|biz|me|us|uk|ca|au|in|pk)$'
+    return re.match(pattern, email, re.IGNORECASE) is not None
+
+
 class RegisterView(APIView):
     def post(self, request, *args, **kwargs):
         username = request.data.get('username') or request.data.get('user_name')
         password = request.data.get('password')
+        email = request.data.get('email') or request.data.get('email_address')
         first_name = request.data.get('first_name') or request.data.get('firstName') or ''
         last_name = request.data.get('last_name') or request.data.get('lastName') or ''
+        
+        # Validate required fields
         if not (username and password):
             return Response({'detail': 'username and password required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate email is required
+        if not email:
+            return Response({'detail': 'email is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate email format
+        if not validate_email(email):
+            return Response({'detail': 'Invalid email format. Please use a valid email address (e.g., user@example.com)'}, status=status.HTTP_400_BAD_REQUEST)
+        
         User = get_user_model()
         if User.objects.filter(username=username).exists():
             return Response({'detail': 'Username already taken'}, status=status.HTTP_409_CONFLICT)
-        user = User.objects.create_user(username=username, email=f'{username}@example.local', password=password)
+        
+        # Check if email is already in use
+        if User.objects.filter(email=email).exists():
+            return Response({'detail': 'Email already in use'}, status=status.HTTP_409_CONFLICT)
+        
+        user = User.objects.create_user(username=username, email=email, password=password)
         user.first_name = first_name
         user.last_name = last_name
         user.save()
-        return Response({'id': user.id, 'username': user.username, 'first_name': user.first_name, 'last_name': user.last_name})
+        return Response({'id': user.id, 'username': user.username, 'email': user.email, 'first_name': user.first_name, 'last_name': user.last_name})
 
 
 class LoginView(APIView):
@@ -190,6 +218,31 @@ class LoginView(APIView):
         if user is None:
             return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         return Response({'id': user.id, 'username': user.username, 'first_name': user.first_name, 'last_name': user.last_name})
+
+
+class FeedbackCreateView(APIView):
+    """Allow authenticated users to submit feedback"""
+    def post(self, request, *args, **kwargs):
+        content = request.data.get('content') or request.data.get('feedback') or request.data.get('message')
+        user_id = request.data.get('user_id')
+        
+        if not content:
+            return Response({'detail': 'Feedback content is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not user_id:
+            return Response({'detail': 'User ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get user
+        User = get_user_model()
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Create feedback
+        feedback = Feedback.objects.create(user=user, content=content)
+        serializer = FeedbackSerializer(feedback)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class LeaveRoomView(APIView):

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Room, Message
+from .models import Room, Message, Feedback
 
 User = get_user_model()
 
@@ -27,3 +27,13 @@ class RoomSerializer(serializers.ModelSerializer):
 
     def get_members(self, obj):
         return [{'id': u.id, 'username': u.username, 'first_name': getattr(u, 'first_name', ''), 'last_name': getattr(u, 'last_name', '')} for u in obj.members.all()]
+
+
+class FeedbackSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    
+    class Meta:
+        model = Feedback
+        fields = ('id', 'username', 'content', 'created_at')
+        read_only_fields = ('id', 'username', 'created_at')
+
